@@ -1,0 +1,719 @@
+import * as vscode from 'vscode';
+import * as path from 'path';
+import * as fs from 'fs';
+import { getCurrentBranch, getIncomingRef, stageFile } from './gitUtils';
+import { parseConflictBlocks, ConflictBlock, resolveWithResult, ConflictSide } from './conflictScanner';
+
+export class MergeEditor {
+  private readonly _panel: vscode.WebviewPanel;
+  private readonly _filePath: string;
+  private readonly _workspaceRoot: string;
+  private readonly _onSaved: () => void;
+  private _disposables: vscode.Disposable[] = [];
+
+  private constructor(
+    panel: vscode.WebviewPanel,
+    filePath: string,
+    workspaceRoot: string,
+    onSaved: () => void
+  ) {
+    this._panel = panel;
+    this._filePath = filePath;
+    this._workspaceRoot = workspaceRoot;
+    this._onSaved = onSaved;
+
+    this._panel.webview.html = this._getWebviewContent();
+
+    this._panel.webview.onDidReceiveMessage(
+      async (message) => {
+        switch (message.command) {
+          case 'save':
+            await this._save(message.content);
+            break;
+          case 'cancel':
+            this._panel.dispose();
+            break;
+        }
+      },
+      null,
+      this._disposables
+    );
+
+    this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+  }
+
+  public static async create(
+    filePath: string,
+    workspaceRoot: string,
+    onSaved: () => void
+  ): Promise<void> {
+    const fileName = path.basename(filePath);
+    const panel = vscode.window.createWebviewPanel(
+      'conflictMergeEditor',
+      `Merge: ${fileName}`,
+      vscode.ViewColumn.One,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+      }
+    );
+
+    new MergeEditor(panel, filePath, workspaceRoot, onSaved);
+  }
+
+  private async _save(content: string): Promise<void> {
+    try {
+      fs.writeFileSync(this._filePath, content, 'utf8');
+      stageFile(this._filePath);
+      this._onSaved();
+      this._panel.dispose();
+      vscode.window.showInformationMessage(`Saved and staged: ${path.basename(this._filePath)}`);
+    } catch (err) {
+      vscode.window.showErrorMessage(`Failed to save: ${err}`);
+    }
+  }
+
+  public dispose(): void {
+    this._panel.dispose();
+    this._disposables.forEach(d => d.dispose());
+    this._disposables = [];
+  }
+
+  private _getWebviewContent(): string {
+    const nonce = getNonce();
+    const fileContent = fs.readFileSync(this._filePath, 'utf8');
+    const blocks = parseConflictBlocks(fileContent);
+    const lines = fileContent.split('\n');
+    const currentBranch = getCurrentBranch(this._workspaceRoot);
+    const incomingRef = getIncomingRef(this._workspaceRoot);
+    const fileName = path.basename(this._filePath);
+    const ext = path.extname(this._filePath).slice(1);
+
+    // Build segment data for the webview
+    interface NormalSegment { type: 'normal'; lines: string[] }
+    interface ConflictSegment { type: 'conflict'; index: number; mineLines: string[]; theirLines: string[] }
+    type Segment = NormalSegment | ConflictSegment;
+
+    const segments: Segment[] = [];
+    let lineIndex = 0;
+    let blockIdx = 0;
+
+    while (lineIndex < lines.length) {
+      if (blockIdx < blocks.length && lineIndex === blocks[blockIdx].startLine) {
+        const b = blocks[blockIdx];
+        segments.push({ type: 'conflict', index: blockIdx, mineLines: b.mineLines, theirLines: b.theirLines });
+        lineIndex = b.endLine + 1;
+        blockIdx++;
+      } else {
+        // Gather normal lines until next conflict or end
+        const normalLines: string[] = [];
+        const nextConflictStart = blockIdx < blocks.length ? blocks[blockIdx].startLine : Infinity;
+        while (lineIndex < lines.length && lineIndex < nextConflictStart) {
+          normalLines.push(lines[lineIndex]);
+          lineIndex++;
+        }
+        if (normalLines.length > 0) {
+          segments.push({ type: 'normal', lines: normalLines });
+        }
+      }
+    }
+
+    const segmentsJson = JSON.stringify(segments);
+    const blocksCount = blocks.length;
+    const fileContentEscaped = JSON.stringify(fileContent);
+
+    return /* html */`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}' https://cdnjs.cloudflare.com; script-src 'nonce-${nonce}' https://cdnjs.cloudflare.com; font-src https://cdnjs.cloudflare.com;">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Merge: ${fileName}</title>
+  <link rel="stylesheet" nonce="${nonce}" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
+  <style nonce="${nonce}">
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--vscode-font-family);
+      font-size: var(--vscode-font-size);
+      color: var(--vscode-foreground);
+      background: var(--vscode-editor-background);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--vscode-panel-border);
+      background: var(--vscode-sideBar-background);
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    .toolbar .title {
+      font-weight: 600;
+      font-size: 13px;
+      margin-right: 8px;
+    }
+
+    .toolbar button {
+      cursor: pointer;
+      border: none;
+      border-radius: 3px;
+      padding: 4px 12px;
+      font-size: 12px;
+      font-family: var(--vscode-font-family);
+      transition: opacity 0.1s;
+    }
+
+    .toolbar button:hover { opacity: 0.85; }
+    .toolbar button:disabled { opacity: 0.4; cursor: default; }
+
+    .btn-prev, .btn-next {
+      background: var(--vscode-button-secondaryBackground, #3a3d41);
+      color: var(--vscode-button-secondaryForeground, #ccc);
+      border: 1px solid var(--vscode-button-border, transparent);
+    }
+
+    .btn-mine-all { background: #2d5a27; color: #c8e6c9; border: 1px solid #4caf50; }
+    .btn-theirs-all { background: #1a3a5c; color: #bbdefb; border: 1px solid #2196f3; }
+
+    .btn-save {
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border: 1px solid transparent;
+    }
+
+    .btn-cancel {
+      background: transparent;
+      color: var(--vscode-foreground);
+      border: 1px solid var(--vscode-button-border, #555);
+      margin-left: auto;
+    }
+
+    .conflict-counter {
+      font-size: 12px;
+      color: var(--vscode-descriptionForeground);
+    }
+
+    .columns-container {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .column {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      border-right: 1px solid var(--vscode-panel-border);
+      overflow: hidden;
+    }
+
+    .column:last-child { border-right: none; }
+
+    .column-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 12px;
+      background: var(--vscode-editorGroupHeader-tabsBackground, #252526);
+      border-bottom: 1px solid var(--vscode-panel-border);
+      flex-shrink: 0;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .column-header .branch-label {
+      font-weight: 400;
+      color: var(--vscode-descriptionForeground);
+      font-size: 11px;
+    }
+
+    .column-scroll {
+      flex: 1;
+      overflow-y: scroll;
+      overflow-x: auto;
+    }
+
+    .code-content {
+      font-family: var(--vscode-editor-font-family, 'Courier New', monospace);
+      font-size: var(--vscode-editor-font-size, 13px);
+      line-height: 1.5;
+      min-height: 100%;
+    }
+
+    /* Normal segment rows */
+    .normal-block {
+      background: var(--vscode-editor-background);
+    }
+
+    .code-line {
+      display: block;
+      padding: 0 12px;
+      white-space: pre;
+      min-height: 1.5em;
+    }
+
+    .code-line:hover {
+      background: var(--vscode-editor-lineHighlightBackground, rgba(255,255,255,0.04));
+    }
+
+    /* Conflict block wrappers */
+    .conflict-block {
+      border-top: 1px solid var(--vscode-panel-border);
+      border-bottom: 1px solid var(--vscode-panel-border);
+    }
+
+    .conflict-block.active {
+      box-shadow: 0 0 0 1px var(--vscode-focusBorder, #007fd4) inset;
+    }
+
+    .mine-block {
+      background: #2d5a27;
+    }
+
+    .theirs-block {
+      background: #1a3a5c;
+    }
+
+    .mine-block .code-line { color: #c8e6c9; }
+    .theirs-block .code-line { color: #bbdefb; }
+
+    .result-block {
+      background: var(--vscode-editor-background);
+      min-height: 60px;
+    }
+
+    .result-block.unresolved {
+      background: rgba(255,200,0,0.05);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px;
+    }
+
+    .result-block.resolved-mine {
+      background: rgba(45, 90, 39, 0.3);
+    }
+
+    .result-block.resolved-theirs {
+      background: rgba(26, 58, 92, 0.3);
+    }
+
+    .result-block.resolved-custom {
+      background: rgba(100, 50, 120, 0.3);
+    }
+
+    .accept-btn {
+      width: 160px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-family: var(--vscode-editor-font-family, monospace);
+      cursor: pointer;
+      border-radius: 3px;
+      border: none;
+      transition: opacity 0.1s;
+    }
+
+    .accept-btn:hover { opacity: 0.85; }
+
+    .accept-mine-btn { background: #2d5a27; color: #c8e6c9; border: 1px solid #4caf50; }
+    .accept-theirs-btn { background: #1a3a5c; color: #bbdefb; border: 1px solid #2196f3; }
+
+    .edit-link {
+      font-size: 11px;
+      color: var(--vscode-textLink-foreground, #3794ff);
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 2px 4px;
+      text-decoration: underline;
+    }
+
+    .resolved-label {
+      font-size: 12px;
+      color: var(--vscode-descriptionForeground);
+      padding: 4px 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .undo-btn {
+      font-size: 11px;
+      background: none;
+      border: 1px solid var(--vscode-button-border, #555);
+      color: var(--vscode-foreground);
+      border-radius: 3px;
+      padding: 1px 6px;
+      cursor: pointer;
+    }
+
+    .undo-btn:hover { opacity: 0.7; }
+
+    .edit-area-wrapper {
+      width: 100%;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    textarea.custom-edit {
+      width: 100%;
+      min-height: 80px;
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border, #555);
+      border-radius: 3px;
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: var(--vscode-editor-font-size, 13px);
+      padding: 6px;
+      resize: vertical;
+    }
+
+    .confirm-btn {
+      align-self: flex-end;
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border: none;
+      border-radius: 3px;
+      padding: 4px 12px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .confirm-btn:hover { opacity: 0.85; }
+
+    .hljs { background: transparent !important; padding: 0 !important; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <span class="title">Merge: ${fileName}</span>
+    <button class="btn-prev" id="btnPrev" onclick="navigateConflict(-1)">← Prev Conflict</button>
+    <button class="btn-next" id="btnNext" onclick="navigateConflict(1)">Next Conflict →</button>
+    <button class="btn-mine-all" onclick="acceptAllMine()">Accept All Mine</button>
+    <button class="btn-theirs-all" onclick="acceptAllTheirs()">Accept All Theirs</button>
+    <span class="conflict-counter" id="conflictCounter"></span>
+    <button class="btn-save" onclick="saveResult()">Save &amp; Mark Resolved</button>
+    <button class="btn-cancel" onclick="cancel()">Cancel</button>
+  </div>
+
+  <div class="columns-container">
+    <div class="column" id="colMine">
+      <div class="column-header">
+        <span>Mine (HEAD)</span>
+        <span class="branch-label">${currentBranch}</span>
+      </div>
+      <div class="column-scroll" id="scrollMine">
+        <div class="code-content" id="contentMine"></div>
+      </div>
+    </div>
+
+    <div class="column" id="colResult">
+      <div class="column-header">
+        <span>Result</span>
+        <span class="branch-label" id="resultCounter"></span>
+      </div>
+      <div class="column-scroll" id="scrollResult">
+        <div class="code-content" id="contentResult"></div>
+      </div>
+    </div>
+
+    <div class="column" id="colTheirs">
+      <div class="column-header">
+        <span>Theirs (Incoming)</span>
+        <span class="branch-label">${incomingRef}</span>
+      </div>
+      <div class="column-scroll" id="scrollTheirs">
+        <div class="code-content" id="contentTheirs"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" nonce="${nonce}"></script>
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+    const segments = ${segmentsJson};
+    const totalConflicts = ${blocksCount};
+    const fileExt = ${JSON.stringify(ext)};
+
+    // Track resolution choices: null = unresolved, 'mine', 'theirs', or custom string
+    const resolutions = new Array(totalConflicts).fill(null);
+    let activeConflictIndex = -1;
+
+    function escapeHtml(str) {
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function highlight(code, ext) {
+      if (!code.trim()) return escapeHtml(code);
+      try {
+        const lang = hljs.getLanguage(ext) ? ext : 'plaintext';
+        return hljs.highlight(code, { language: lang }).value;
+      } catch {
+        return escapeHtml(code);
+      }
+    }
+
+    function renderLines(lines, cssClass) {
+      if (lines.length === 0) {
+        return '<span class="code-line">&nbsp;</span>';
+      }
+      return lines.map(l => {
+        const highlighted = highlight(l, fileExt);
+        return '<span class="code-line">' + (highlighted || '&nbsp;') + '</span>';
+      }).join('');
+    }
+
+    function renderColumns() {
+      let mineHtml = '';
+      let resultHtml = '';
+      let theirsHtml = '';
+      let conflictIdx = 0;
+
+      for (const seg of segments) {
+        if (seg.type === 'normal') {
+          const code = seg.lines.join('\\n');
+          const rendered = renderLines(seg.lines, '');
+          const block = '<div class="normal-block">' + rendered + '</div>';
+          mineHtml += block;
+          theirsHtml += block;
+          resultHtml += block;
+        } else {
+          const idx = conflictIdx;
+          conflictIdx++;
+          const res = resolutions[idx];
+          const isActive = idx === activeConflictIndex;
+          const activeClass = isActive ? ' active' : '';
+
+          // Mine column
+          mineHtml += '<div class="conflict-block mine-block' + activeClass + '" data-conflict="' + idx + '" onmouseenter="setActive(' + idx + ')" onmouseleave="clearActive()">'
+            + renderLines(seg.mineLines, 'mine')
+            + '</div>';
+
+          // Theirs column
+          theirsHtml += '<div class="conflict-block theirs-block' + activeClass + '" data-conflict="' + idx + '" onmouseenter="setActive(' + idx + ')" onmouseleave="clearActive()">'
+            + renderLines(seg.theirLines, 'theirs')
+            + '</div>';
+
+          // Result column
+          if (res === null) {
+            resultHtml += '<div class="conflict-block result-block unresolved' + activeClass + '" id="result-block-' + idx + '" data-conflict="' + idx + '" onmouseenter="setActive(' + idx + ')" onmouseleave="clearActive()">'
+              + '<button class="accept-btn accept-mine-btn" onclick="accept(' + idx + ', \\'mine\\')">▶ Accept Mine</button>'
+              + '<button class="accept-btn accept-theirs-btn" onclick="accept(' + idx + ', \\'theirs\\')">▶ Accept Theirs</button>'
+              + '<button class="edit-link" onclick="editBlock(' + idx + ')">✏ Edit</button>'
+              + '</div>';
+          } else if (res === 'mine') {
+            const content = seg.mineLines.join('\\n');
+            resultHtml += '<div class="conflict-block result-block resolved-mine' + activeClass + '" id="result-block-' + idx + '" data-conflict="' + idx + '">'
+              + '<div class="resolved-label">✓ Mine accepted <button class="undo-btn" onclick="undo(' + idx + ')">↩ Undo</button></div>'
+              + renderLines(seg.mineLines, 'mine')
+              + '</div>';
+          } else if (res === 'theirs') {
+            resultHtml += '<div class="conflict-block result-block resolved-theirs' + activeClass + '" id="result-block-' + idx + '" data-conflict="' + idx + '">'
+              + '<div class="resolved-label">✓ Theirs accepted <button class="undo-btn" onclick="undo(' + idx + ')">↩ Undo</button></div>'
+              + renderLines(seg.theirLines, 'theirs')
+              + '</div>';
+          } else {
+            const customLines = res.split('\\n');
+            resultHtml += '<div class="conflict-block result-block resolved-custom' + activeClass + '" id="result-block-' + idx + '" data-conflict="' + idx + '">'
+              + '<div class="resolved-label">✓ Custom edit <button class="undo-btn" onclick="undo(' + idx + ')">↩ Undo</button></div>'
+              + renderLines(customLines, 'custom')
+              + '</div>';
+          }
+        }
+      }
+
+      document.getElementById('contentMine').innerHTML = mineHtml;
+      document.getElementById('contentResult').innerHTML = resultHtml;
+      document.getElementById('contentTheirs').innerHTML = theirsHtml;
+
+      updateCounter();
+    }
+
+    function updateCounter() {
+      const unresolved = resolutions.filter(r => r === null).length;
+      const counterText = unresolved === 0
+        ? '✓ All resolved'
+        : unresolved + ' conflict' + (unresolved !== 1 ? 's' : '') + ' remaining';
+      document.getElementById('conflictCounter').textContent = counterText;
+      document.getElementById('resultCounter').textContent = counterText;
+
+      document.getElementById('btnPrev').disabled = totalConflicts === 0;
+      document.getElementById('btnNext').disabled = totalConflicts === 0;
+    }
+
+    function accept(idx, side) {
+      resolutions[idx] = side;
+      renderColumns();
+    }
+
+    function undo(idx) {
+      resolutions[idx] = null;
+      renderColumns();
+    }
+
+    function editBlock(idx) {
+      const seg = segments.filter(s => s.type === 'conflict')[idx];
+      const combined = seg.mineLines.join('\\n') + '\\n' + seg.theirLines.join('\\n');
+      const block = document.getElementById('result-block-' + idx);
+      if (!block) { return; }
+      block.className = 'conflict-block result-block unresolved';
+      block.innerHTML = '<div class="edit-area-wrapper">'
+        + '<textarea class="custom-edit" id="ta-' + idx + '">' + escapeHtml(combined) + '</textarea>'
+        + '<button class="confirm-btn" onclick="confirmEdit(' + idx + ')">✓ Confirm</button>'
+        + '</div>';
+    }
+
+    function confirmEdit(idx) {
+      const ta = document.getElementById('ta-' + idx);
+      if (!ta) { return; }
+      resolutions[idx] = ta.value;
+      renderColumns();
+    }
+
+    function acceptAllMine() {
+      for (let i = 0; i < totalConflicts; i++) {
+        resolutions[i] = 'mine';
+      }
+      renderColumns();
+    }
+
+    function acceptAllTheirs() {
+      for (let i = 0; i < totalConflicts; i++) {
+        resolutions[i] = 'theirs';
+      }
+      renderColumns();
+    }
+
+    function navigateConflict(direction) {
+      const conflictBlocks = document.querySelectorAll('#contentResult .conflict-block');
+      if (conflictBlocks.length === 0) { return; }
+
+      let nextIdx = activeConflictIndex + direction;
+      if (nextIdx < 0) { nextIdx = conflictBlocks.length - 1; }
+      if (nextIdx >= conflictBlocks.length) { nextIdx = 0; }
+
+      setActive(nextIdx);
+
+      // Scroll to the block in the result column
+      const resultBlock = document.getElementById('result-block-' + nextIdx);
+      if (resultBlock) {
+        resultBlock.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+
+    function setActive(idx) {
+      activeConflictIndex = idx;
+      // Highlight all columns' conflict block with this index
+      document.querySelectorAll('[data-conflict]').forEach(el => {
+        if (parseInt(el.getAttribute('data-conflict')) === idx) {
+          el.classList.add('active');
+        } else {
+          el.classList.remove('active');
+        }
+      });
+    }
+
+    function clearActive() {
+      // Only clear if not navigating
+    }
+
+    function buildResultContent() {
+      const lines = [];
+      let conflictIdx = 0;
+      for (const seg of segments) {
+        if (seg.type === 'normal') {
+          lines.push(...seg.lines);
+        } else {
+          const res = resolutions[conflictIdx];
+          if (res === 'mine') {
+            lines.push(...seg.mineLines);
+          } else if (res === 'theirs') {
+            lines.push(...seg.theirLines);
+          } else if (res !== null) {
+            lines.push(...res.split('\\n'));
+          } else {
+            // Still unresolved — keep raw conflict markers
+            lines.push('<<<<<<< HEAD');
+            lines.push(...seg.mineLines);
+            lines.push('=======');
+            lines.push(...seg.theirLines);
+            lines.push('>>>>>>> incoming');
+          }
+          conflictIdx++;
+        }
+      }
+      return lines.join('\\n');
+    }
+
+    function saveResult() {
+      const unresolved = resolutions.filter(r => r === null).length;
+      if (unresolved > 0) {
+        const proceed = confirm(unresolved + ' conflict(s) still unresolved. Save anyway with conflict markers?');
+        if (!proceed) { return; }
+      }
+      const content = buildResultContent();
+      vscode.postMessage({ command: 'save', content });
+    }
+
+    function cancel() {
+      vscode.postMessage({ command: 'cancel' });
+    }
+
+    // Synchronized scrolling
+    let scrollingSrc = null;
+    let scrollTimer = null;
+
+    function syncScroll(src) {
+      if (scrollingSrc && scrollingSrc !== src) { return; }
+      scrollingSrc = src;
+      clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(() => { scrollingSrc = null; }, 100);
+
+      const scrolls = ['scrollMine', 'scrollResult', 'scrollTheirs'];
+      const srcEl = document.getElementById(src);
+      const ratio = srcEl.scrollTop / (srcEl.scrollHeight - srcEl.clientHeight || 1);
+
+      for (const id of scrolls) {
+        if (id === src) { continue; }
+        const el = document.getElementById(id);
+        el.scrollTop = ratio * (el.scrollHeight - el.clientHeight);
+      }
+    }
+
+    ['scrollMine', 'scrollResult', 'scrollTheirs'].forEach(id => {
+      document.getElementById(id).addEventListener('scroll', () => syncScroll(id), { passive: true });
+    });
+
+    // Initial render
+    renderColumns();
+  </script>
+</body>
+</html>`;
+  }
+}
+
+function getNonce(): string {
+  let text = '';
+  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < 32; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
+}

@@ -1,0 +1,63 @@
+{
+  "name": "conflict-resolver",
+  "displayName": "Conflict Resolver",
+  "description": "JetBrains-style Git conflict resolution for VS Code",
+  "version": "0.1.0",
+  "publisher": "conflict-resolver",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:conflictResolver.openConflicts",
+    "workspaceContains:.git"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "conflictResolver.openConflicts",
+        "title": "Resolve Git Conflicts...",
+        "category": "Conflict Resolver",
+        "icon": "$(git-merge)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "conflictResolver.openConflicts",
+        "key": "ctrl+shift+g c",
+        "mac": "cmd+shift+g c"
+      }
+    ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "conflictResolver.openConflicts",
+          "group": "navigation",
+          "when": "scmProvider == git"
+        }
+      ],
+      "scm/resourceState/context": [
+        {
+          "command": "conflictResolver.openConflicts",
+          "group": "inline",
+          "when": "scmProvider == git"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.39",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}
