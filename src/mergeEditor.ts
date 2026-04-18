@@ -286,27 +286,42 @@ export class MergeEditor {
     .mine-block .code-line { color: #c8e6c9; }
     .theirs-block .code-line { color: #bbdefb; }
 
-    #scrollResult {
-      overflow: hidden;
+    .unresolved-block {
+      background: repeating-linear-gradient(
+        -45deg,
+        rgba(128, 128, 128, 0.05),
+        rgba(128, 128, 128, 0.05) 10px,
+        transparent 10px,
+        transparent 20px
+      );
     }
 
-    #resultEditor {
-      display: block;
-      width: 100%;
-      height: 100%;
+    .resolved-block {
       background: var(--vscode-editor-background);
-      color: var(--vscode-editor-foreground, var(--vscode-foreground));
-      border: none;
-      outline: none;
-      font-family: var(--vscode-editor-font-family, 'Courier New', monospace);
-      font-size: var(--vscode-editor-font-size, 13px);
-      line-height: 1.5;
-      padding: 4px 12px;
-      resize: none;
-      tab-size: 2;
-      white-space: pre;
-      overflow-wrap: normal;
-      overflow-x: auto;
+    }
+
+    .unresolved-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      width: 100%;
+      color: var(--vscode-descriptionForeground);
+      font-style: italic;
+      padding: 12px;
+      user-select: none;
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .result-content-area {
+      min-height: 1.5em;
+      position: relative;
+    }
+
+    .result-content-area:focus {
+      outline: 1px solid var(--vscode-focusBorder);
     }
 
     .conflict-actions {
@@ -376,7 +391,7 @@ export class MergeEditor {
         <span class="branch-label" id="resultCounter"></span>
       </div>
       <div class="column-scroll" id="scrollResult">
-        <textarea id="resultEditor" spellcheck="false"></textarea>
+        <div class="code-content" id="contentResult"></div>
       </div>
     </div>
 
@@ -433,6 +448,7 @@ export class MergeEditor {
     function renderColumns() {
       let mineHtml = '';
       let theirsHtml = '';
+      let resultHtml = '';
       let conflictIdx = 0;
 
       for (const seg of segments) {
@@ -441,6 +457,7 @@ export class MergeEditor {
           const block = '<div class="normal-block">' + rendered + '</div>';
           mineHtml += block;
           theirsHtml += block;
+          resultHtml += block;
         } else {
           const idx = conflictIdx;
           conflictIdx++;
@@ -448,29 +465,63 @@ export class MergeEditor {
           const isActive = idx === activeConflictIndex;
           const activeClass = isActive ? ' active' : '';
 
+          const resLinesLength = res === 'mine' ? seg.mineLines.length 
+            : res === 'theirs' ? seg.theirLines.length 
+            : res !== null ? res.split('\\n').length 
+            : 0;
+            
+          const lineCountDiff = Math.max(seg.mineLines.length, seg.theirLines.length, resLinesLength);
+          const minHeightStyle = 'min-height: ' + (Math.max(lineCountDiff, 1) * 1.5) + 'em; display: block;';
+
           // Mine column
           mineHtml += '<div class="conflict-block mine-block' + activeClass + '" data-conflict="' + idx + '">'
             + '<div class="conflict-actions">'
             + '<button class="accept-inline-btn accept-mine-btn" data-action="accept" data-side="mine" data-index="' + idx + '">Accept Mine ▶</button>'
             + (res === 'mine' ? '<button class="undo-btn" data-action="undo" data-index="' + idx + '">↩ Undo</button>' : '')
             + '</div>'
-            + renderLines(seg.mineLines, 'mine')
+            + '<div style="' + minHeightStyle + '">' + renderLines(seg.mineLines, 'mine') + '</div>'
             + '</div>';
 
           // Theirs column
           theirsHtml += '<div class="conflict-block theirs-block' + activeClass + '" data-conflict="' + idx + '">'
-            + '<div class="conflict-actions">'
-            + '<button class="accept-inline-btn accept-theirs-btn" data-action="accept" data-side="theirs" data-index="' + idx + '">◀ Accept Theirs</button>'
+            + '<div class="conflict-actions" style="justify-content: flex-end;">'
             + (res === 'theirs' ? '<button class="undo-btn" data-action="undo" data-index="' + idx + '">↩ Undo</button>' : '')
+            + '<button class="accept-inline-btn accept-theirs-btn" data-action="accept" data-side="theirs" data-index="' + idx + '">◀ Accept Theirs</button>'
             + '</div>'
-            + renderLines(seg.theirLines, 'theirs')
+            + '<div style="' + minHeightStyle + '">' + renderLines(seg.theirLines, 'theirs') + '</div>'
+            + '</div>';
+
+          // Result column
+          let resContent = '';
+          let resClass = '';
+          if (res === 'mine') {
+            resContent = renderLines(seg.mineLines, 'mine');
+            resClass = ' mine-block';
+          } else if (res === 'theirs') {
+            resContent = renderLines(seg.theirLines, 'theirs');
+            resClass = ' theirs-block';
+          } else if (res !== null) {
+            resContent = renderLines(res.split('\\n'), '');
+            resClass = ' resolved-block';
+          } else {
+            resContent = '<div class="unresolved-placeholder">Unresolved. Accept a side to compile.</div><div class="code-line">&nbsp;</div>';
+            resClass = ' unresolved-block';
+          }
+
+          resultHtml += '<div class="conflict-block result-block' + resClass + activeClass + '" data-conflict="' + idx + '">'
+            + '<div class="conflict-actions" style="justify-content: center;">'
+            + (res !== null ? '<button class="undo-btn" data-action="undo" data-index="' + idx + '">↩ Reset</button>' : '<span style="font-size:11px; opacity:0.7;">Result</span>')
+            + '</div>'
+            + '<div class="result-content-area" contenteditable="true" data-index="' + idx + '" style="outline:none; width:100%; ' + minHeightStyle + '">'
+            + resContent
+            + '</div>'
             + '</div>';
         }
       }
 
       document.getElementById('contentMine').innerHTML = mineHtml;
       document.getElementById('contentTheirs').innerHTML = theirsHtml;
-      document.getElementById('resultEditor').value = buildResultContent();
+      document.getElementById('contentResult').innerHTML = resultHtml;
 
       updateCounter();
     }
@@ -573,8 +624,7 @@ export class MergeEditor {
     }
 
     function saveResult() {
-      const editor = document.getElementById('resultEditor');
-      const content = editor.value;
+      const content = buildResultContent();
       const conflictMarkerCount = (content.match(/^<{7}/mg) || []).length;
       if (conflictMarkerCount > 0) {
         const proceed = confirm(conflictMarkerCount + ' conflict(s) still unresolved. Save anyway with conflict markers?');
@@ -643,6 +693,35 @@ export class MergeEditor {
 
     document.getElementById('contentMine').addEventListener('click', handleConflictAction);
     document.getElementById('contentTheirs').addEventListener('click', handleConflictAction);
+    document.getElementById('contentResult').addEventListener('click', handleConflictAction);
+
+    document.getElementById('contentResult').addEventListener('paste', e => {
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+      if (document.queryCommandSupported('insertText')) {
+        document.execCommand('insertText', false, text);
+      } else {
+        const selection = window.getSelection();
+        if (!selection.rangeCount) return false;
+        selection.deleteFromDocument();
+        selection.getRangeAt(0).insertNode(document.createTextNode(text));
+      }
+    });
+
+    document.getElementById('contentResult').addEventListener('input', e => {
+      const target = e.target;
+      const contentArea = target.closest('.result-content-area');
+      if (contentArea) {
+        const placeholder = contentArea.querySelector('.unresolved-placeholder');
+        if (placeholder) placeholder.remove();
+        
+        const idx = Number(contentArea.getAttribute('data-index'));
+        let text = contentArea.innerText || '';
+        if (text.endsWith('\\n')) text = text.slice(0, -1);
+        resolutions[idx] = text;
+        updateCounter();
+      }
+    });
 
     // Synchronized scrolling
     let scrollingSrc = null;
@@ -654,7 +733,7 @@ export class MergeEditor {
       clearTimeout(scrollTimer);
       scrollTimer = setTimeout(() => { scrollingSrc = null; }, 100);
 
-      const scrolls = ['scrollMine', 'scrollTheirs'];
+      const scrolls = ['scrollMine', 'scrollResult', 'scrollTheirs'];
       const srcEl = document.getElementById(src);
       const ratio = srcEl.scrollTop / (srcEl.scrollHeight - srcEl.clientHeight || 1);
 
@@ -665,8 +744,9 @@ export class MergeEditor {
       }
     }
 
-    ['scrollMine', 'scrollTheirs'].forEach(id => {
-      document.getElementById(id).addEventListener('scroll', () => syncScroll(id), { passive: true });
+    ['scrollMine', 'scrollResult', 'scrollTheirs'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('scroll', () => syncScroll(id), { passive: true });
     });
 
     // Initial render
