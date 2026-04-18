@@ -286,67 +286,51 @@ export class MergeEditor {
     .mine-block .code-line { color: #c8e6c9; }
     .theirs-block .code-line { color: #bbdefb; }
 
-    .result-block {
+    #scrollResult {
+      overflow: hidden;
+    }
+
+    #resultEditor {
+      display: block;
+      width: 100%;
+      height: 100%;
       background: var(--vscode-editor-background);
-      min-height: 60px;
+      color: var(--vscode-editor-foreground, var(--vscode-foreground));
+      border: none;
+      outline: none;
+      font-family: var(--vscode-editor-font-family, 'Courier New', monospace);
+      font-size: var(--vscode-editor-font-size, 13px);
+      line-height: 1.5;
+      padding: 4px 12px;
+      resize: none;
+      tab-size: 2;
+      white-space: pre;
+      overflow-wrap: normal;
+      overflow-x: auto;
     }
 
-    .result-block.unresolved {
-      background: rgba(255,200,0,0.05);
+    .conflict-actions {
       display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      padding: 10px;
+      gap: 4px;
+      padding: 4px 8px;
+      background: rgba(0, 0, 0, 0.25);
+      flex-shrink: 0;
     }
 
-    .result-block.resolved-mine {
-      background: rgba(45, 90, 39, 0.3);
-    }
-
-    .result-block.resolved-theirs {
-      background: rgba(26, 58, 92, 0.3);
-    }
-
-    .result-block.resolved-custom {
-      background: rgba(100, 50, 120, 0.3);
-    }
-
-    .accept-btn {
-      width: 160px;
-      padding: 5px 12px;
-      font-size: 12px;
-      font-family: var(--vscode-editor-font-family, monospace);
+    .accept-inline-btn {
+      padding: 2px 8px;
+      font-size: 11px;
+      font-family: var(--vscode-font-family);
       cursor: pointer;
       border-radius: 3px;
       border: none;
       transition: opacity 0.1s;
     }
 
-    .accept-btn:hover { opacity: 0.85; }
-
+    .accept-inline-btn:hover { opacity: 0.85; }
+    .accept-inline-btn:disabled { opacity: 0.4; cursor: default; }
     .accept-mine-btn { background: #2d5a27; color: #c8e6c9; border: 1px solid #4caf50; }
     .accept-theirs-btn { background: #1a3a5c; color: #bbdefb; border: 1px solid #2196f3; }
-
-    .edit-link {
-      font-size: 11px;
-      color: var(--vscode-textLink-foreground, #3794ff);
-      cursor: pointer;
-      background: none;
-      border: none;
-      padding: 2px 4px;
-      text-decoration: underline;
-    }
-
-    .resolved-label {
-      font-size: 12px;
-      color: var(--vscode-descriptionForeground);
-      padding: 4px 8px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
 
     .undo-btn {
       font-size: 11px;
@@ -360,53 +344,19 @@ export class MergeEditor {
 
     .undo-btn:hover { opacity: 0.7; }
 
-    .edit-area-wrapper {
-      width: 100%;
-      padding: 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    textarea.custom-edit {
-      width: 100%;
-      min-height: 80px;
-      background: var(--vscode-input-background);
-      color: var(--vscode-input-foreground);
-      border: 1px solid var(--vscode-input-border, #555);
-      border-radius: 3px;
-      font-family: var(--vscode-editor-font-family, monospace);
-      font-size: var(--vscode-editor-font-size, 13px);
-      padding: 6px;
-      resize: vertical;
-    }
-
-    .confirm-btn {
-      align-self: flex-end;
-      background: var(--vscode-button-background);
-      color: var(--vscode-button-foreground);
-      border: none;
-      border-radius: 3px;
-      padding: 4px 12px;
-      cursor: pointer;
-      font-size: 12px;
-    }
-
-    .confirm-btn:hover { opacity: 0.85; }
-
     .hljs { background: transparent !important; padding: 0 !important; }
   </style>
 </head>
 <body>
   <div class="toolbar">
     <span class="title">Merge: ${fileName}</span>
-    <button class="btn-prev" id="btnPrev" onclick="navigateConflict(-1)">← Prev Conflict</button>
-    <button class="btn-next" id="btnNext" onclick="navigateConflict(1)">Next Conflict →</button>
-    <button class="btn-mine-all" onclick="acceptAllMine()">Accept All Mine</button>
-    <button class="btn-theirs-all" onclick="acceptAllTheirs()">Accept All Theirs</button>
+    <button class="btn-prev" id="btnPrev">← Prev Conflict</button>
+    <button class="btn-next" id="btnNext">Next Conflict →</button>
+    <button class="btn-mine-all" id="btnAcceptAllMine">Accept All Mine</button>
+    <button class="btn-theirs-all" id="btnAcceptAllTheirs">Accept All Theirs</button>
     <span class="conflict-counter" id="conflictCounter"></span>
-    <button class="btn-save" onclick="saveResult()">Save &amp; Mark Resolved</button>
-    <button class="btn-cancel" onclick="cancel()">Cancel</button>
+    <button class="btn-save" id="btnSave">Save &amp; Mark Resolved</button>
+    <button class="btn-cancel" id="btnCancel">Cancel</button>
   </div>
 
   <div class="columns-container">
@@ -426,7 +376,7 @@ export class MergeEditor {
         <span class="branch-label" id="resultCounter"></span>
       </div>
       <div class="column-scroll" id="scrollResult">
-        <div class="code-content" id="contentResult"></div>
+        <textarea id="resultEditor" spellcheck="false"></textarea>
       </div>
     </div>
 
@@ -482,18 +432,15 @@ export class MergeEditor {
 
     function renderColumns() {
       let mineHtml = '';
-      let resultHtml = '';
       let theirsHtml = '';
       let conflictIdx = 0;
 
       for (const seg of segments) {
         if (seg.type === 'normal') {
-          const code = seg.lines.join('\\n');
           const rendered = renderLines(seg.lines, '');
           const block = '<div class="normal-block">' + rendered + '</div>';
           mineHtml += block;
           theirsHtml += block;
-          resultHtml += block;
         } else {
           const idx = conflictIdx;
           conflictIdx++;
@@ -502,46 +449,28 @@ export class MergeEditor {
           const activeClass = isActive ? ' active' : '';
 
           // Mine column
-          mineHtml += '<div class="conflict-block mine-block' + activeClass + '" data-conflict="' + idx + '" onmouseenter="setActive(' + idx + ')" onmouseleave="clearActive()">'
+          mineHtml += '<div class="conflict-block mine-block' + activeClass + '" data-conflict="' + idx + '">'
+            + '<div class="conflict-actions">'
+            + '<button class="accept-inline-btn accept-mine-btn" data-action="accept" data-side="mine" data-index="' + idx + '">Accept Mine ▶</button>'
+            + (res === 'mine' ? '<button class="undo-btn" data-action="undo" data-index="' + idx + '">↩ Undo</button>' : '')
+            + '</div>'
             + renderLines(seg.mineLines, 'mine')
             + '</div>';
 
           // Theirs column
-          theirsHtml += '<div class="conflict-block theirs-block' + activeClass + '" data-conflict="' + idx + '" onmouseenter="setActive(' + idx + ')" onmouseleave="clearActive()">'
+          theirsHtml += '<div class="conflict-block theirs-block' + activeClass + '" data-conflict="' + idx + '">'
+            + '<div class="conflict-actions">'
+            + '<button class="accept-inline-btn accept-theirs-btn" data-action="accept" data-side="theirs" data-index="' + idx + '">◀ Accept Theirs</button>'
+            + (res === 'theirs' ? '<button class="undo-btn" data-action="undo" data-index="' + idx + '">↩ Undo</button>' : '')
+            + '</div>'
             + renderLines(seg.theirLines, 'theirs')
             + '</div>';
-
-          // Result column
-          if (res === null) {
-            resultHtml += '<div class="conflict-block result-block unresolved' + activeClass + '" id="result-block-' + idx + '" data-conflict="' + idx + '" onmouseenter="setActive(' + idx + ')" onmouseleave="clearActive()">'
-              + '<button class="accept-btn accept-mine-btn" onclick="accept(' + idx + ', \\'mine\\')">▶ Accept Mine</button>'
-              + '<button class="accept-btn accept-theirs-btn" onclick="accept(' + idx + ', \\'theirs\\')">▶ Accept Theirs</button>'
-              + '<button class="edit-link" onclick="editBlock(' + idx + ')">✏ Edit</button>'
-              + '</div>';
-          } else if (res === 'mine') {
-            const content = seg.mineLines.join('\\n');
-            resultHtml += '<div class="conflict-block result-block resolved-mine' + activeClass + '" id="result-block-' + idx + '" data-conflict="' + idx + '">'
-              + '<div class="resolved-label">✓ Mine accepted <button class="undo-btn" onclick="undo(' + idx + ')">↩ Undo</button></div>'
-              + renderLines(seg.mineLines, 'mine')
-              + '</div>';
-          } else if (res === 'theirs') {
-            resultHtml += '<div class="conflict-block result-block resolved-theirs' + activeClass + '" id="result-block-' + idx + '" data-conflict="' + idx + '">'
-              + '<div class="resolved-label">✓ Theirs accepted <button class="undo-btn" onclick="undo(' + idx + ')">↩ Undo</button></div>'
-              + renderLines(seg.theirLines, 'theirs')
-              + '</div>';
-          } else {
-            const customLines = res.split('\\n');
-            resultHtml += '<div class="conflict-block result-block resolved-custom' + activeClass + '" id="result-block-' + idx + '" data-conflict="' + idx + '">'
-              + '<div class="resolved-label">✓ Custom edit <button class="undo-btn" onclick="undo(' + idx + ')">↩ Undo</button></div>'
-              + renderLines(customLines, 'custom')
-              + '</div>';
-          }
         }
       }
 
       document.getElementById('contentMine').innerHTML = mineHtml;
-      document.getElementById('contentResult').innerHTML = resultHtml;
       document.getElementById('contentTheirs').innerHTML = theirsHtml;
+      document.getElementById('resultEditor').value = buildResultContent();
 
       updateCounter();
     }
@@ -568,25 +497,6 @@ export class MergeEditor {
       renderColumns();
     }
 
-    function editBlock(idx) {
-      const seg = segments.filter(s => s.type === 'conflict')[idx];
-      const combined = seg.mineLines.join('\\n') + '\\n' + seg.theirLines.join('\\n');
-      const block = document.getElementById('result-block-' + idx);
-      if (!block) { return; }
-      block.className = 'conflict-block result-block unresolved';
-      block.innerHTML = '<div class="edit-area-wrapper">'
-        + '<textarea class="custom-edit" id="ta-' + idx + '">' + escapeHtml(combined) + '</textarea>'
-        + '<button class="confirm-btn" onclick="confirmEdit(' + idx + ')">✓ Confirm</button>'
-        + '</div>';
-    }
-
-    function confirmEdit(idx) {
-      const ta = document.getElementById('ta-' + idx);
-      if (!ta) { return; }
-      resolutions[idx] = ta.value;
-      renderColumns();
-    }
-
     function acceptAllMine() {
       for (let i = 0; i < totalConflicts; i++) {
         resolutions[i] = 'mine';
@@ -602,7 +512,7 @@ export class MergeEditor {
     }
 
     function navigateConflict(direction) {
-      const conflictBlocks = document.querySelectorAll('#contentResult .conflict-block');
+      const conflictBlocks = document.querySelectorAll('#contentMine .conflict-block');
       if (conflictBlocks.length === 0) { return; }
 
       let nextIdx = activeConflictIndex + direction;
@@ -611,10 +521,10 @@ export class MergeEditor {
 
       setActive(nextIdx);
 
-      // Scroll to the block in the result column
-      const resultBlock = document.getElementById('result-block-' + nextIdx);
-      if (resultBlock) {
-        resultBlock.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Scroll to the block in the mine column
+      const mineBlock = conflictBlocks[nextIdx];
+      if (mineBlock instanceof HTMLElement) {
+        mineBlock.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }
 
@@ -663,18 +573,76 @@ export class MergeEditor {
     }
 
     function saveResult() {
-      const unresolved = resolutions.filter(r => r === null).length;
-      if (unresolved > 0) {
-        const proceed = confirm(unresolved + ' conflict(s) still unresolved. Save anyway with conflict markers?');
+      const editor = document.getElementById('resultEditor');
+      const content = editor.value;
+      const conflictMarkerCount = (content.match(/^<{7}/mg) || []).length;
+      if (conflictMarkerCount > 0) {
+        const proceed = confirm(conflictMarkerCount + ' conflict(s) still unresolved. Save anyway with conflict markers?');
         if (!proceed) { return; }
       }
-      const content = buildResultContent();
       vscode.postMessage({ command: 'save', content });
     }
 
     function cancel() {
       vscode.postMessage({ command: 'cancel' });
     }
+
+    document.getElementById('btnPrev').addEventListener('click', () => navigateConflict(-1));
+    document.getElementById('btnNext').addEventListener('click', () => navigateConflict(1));
+    document.getElementById('btnAcceptAllMine').addEventListener('click', acceptAllMine);
+    document.getElementById('btnAcceptAllTheirs').addEventListener('click', acceptAllTheirs);
+    document.getElementById('btnSave').addEventListener('click', saveResult);
+    document.getElementById('btnCancel').addEventListener('click', cancel);
+
+    document.querySelector('.columns-container').addEventListener('mouseover', event => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const conflictBlock = target.closest('[data-conflict]');
+      if (!(conflictBlock instanceof HTMLElement)) {
+        return;
+      }
+
+      const index = Number(conflictBlock.dataset.conflict);
+      if (Number.isInteger(index)) {
+        setActive(index);
+      }
+    });
+
+    function handleConflictAction(event) {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const button = target.closest('button[data-action]');
+      if (!(button instanceof HTMLButtonElement) || button.disabled) {
+        return;
+      }
+
+      const index = Number(button.dataset.index);
+      if (!Number.isInteger(index)) {
+        return;
+      }
+
+      switch (button.dataset.action) {
+        case 'accept': {
+          const side = button.dataset.side;
+          if (side === 'mine' || side === 'theirs') {
+            accept(index, side);
+          }
+          break;
+        }
+        case 'undo':
+          undo(index);
+          break;
+      }
+    }
+
+    document.getElementById('contentMine').addEventListener('click', handleConflictAction);
+    document.getElementById('contentTheirs').addEventListener('click', handleConflictAction);
 
     // Synchronized scrolling
     let scrollingSrc = null;
@@ -686,7 +654,7 @@ export class MergeEditor {
       clearTimeout(scrollTimer);
       scrollTimer = setTimeout(() => { scrollingSrc = null; }, 100);
 
-      const scrolls = ['scrollMine', 'scrollResult', 'scrollTheirs'];
+      const scrolls = ['scrollMine', 'scrollTheirs'];
       const srcEl = document.getElementById(src);
       const ratio = srcEl.scrollTop / (srcEl.scrollHeight - srcEl.clientHeight || 1);
 
@@ -697,7 +665,7 @@ export class MergeEditor {
       }
     }
 
-    ['scrollMine', 'scrollResult', 'scrollTheirs'].forEach(id => {
+    ['scrollMine', 'scrollTheirs'].forEach(id => {
       document.getElementById(id).addEventListener('scroll', () => syncScroll(id), { passive: true });
     });
 

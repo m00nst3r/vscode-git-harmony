@@ -403,9 +403,9 @@ export class ConflictPanel {
             <div class="conflict-count">\${f.resolved ? '<span class="resolved-badge">✓ Resolved</span>' : f.conflictCount + ' conflict block' + (f.conflictCount !== 1 ? 's' : '')}</div>
           </div>
           <div class="row-actions">
-            <button class="btn-mine" onclick="resolve(\${i}, 'mine')" \${f.resolved ? 'disabled' : ''}>Accept Mine</button>
-            <button class="btn-theirs" onclick="resolve(\${i}, 'theirs')" \${f.resolved ? 'disabled' : ''}>Accept Theirs</button>
-            <button class="btn-merge" onclick="merge(\${i})" \${f.resolved ? 'disabled' : ''}>Merge...</button>
+            <button class="btn-mine" data-action="resolve" data-side="mine" data-index="\${i}" \${f.resolved ? 'disabled' : ''}>Accept Mine</button>
+            <button class="btn-theirs" data-action="resolve" data-side="theirs" data-index="\${i}" \${f.resolved ? 'disabled' : ''}>Accept Theirs</button>
+            <button class="btn-merge" data-action="merge" data-index="\${i}" \${f.resolved ? 'disabled' : ''}>Merge...</button>
           </div>
         </div>\`;
       }).join('');
@@ -422,6 +422,35 @@ export class ConflictPanel {
     function merge(index) {
       vscode.postMessage({ command: 'merge', index });
     }
+
+    document.getElementById('fileList').addEventListener('click', event => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const button = target.closest('button[data-action]');
+      if (!(button instanceof HTMLButtonElement) || button.disabled) {
+        return;
+      }
+
+      const index = Number(button.dataset.index);
+      if (!Number.isInteger(index)) {
+        return;
+      }
+
+      if (button.dataset.action === 'resolve') {
+        const side = button.dataset.side;
+        if (side === 'mine' || side === 'theirs') {
+          resolve(index, side);
+        }
+        return;
+      }
+
+      if (button.dataset.action === 'merge') {
+        merge(index);
+      }
+    });
 
     document.getElementById('acceptAllMine').onclick = () => vscode.postMessage({ command: 'acceptAllMine' });
     document.getElementById('acceptAllTheirs').onclick = () => vscode.postMessage({ command: 'acceptAllTheirs' });
