@@ -300,19 +300,23 @@ export class MergeEditor {
       background: var(--vscode-editor-background);
     }
 
-    .unresolved-placeholder {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      width: 100%;
+    .incoming-separator {
+      font-family: var(--vscode-font-family);
+      font-size: 10px;
       color: var(--vscode-descriptionForeground);
-      font-style: italic;
-      padding: 12px;
+      padding: 2px 12px;
+      background: rgba(33, 150, 243, 0.08);
+      border-top: 1px dashed rgba(33, 150, 243, 0.3);
       user-select: none;
-      position: absolute;
-      inset: 0;
       pointer-events: none;
+      letter-spacing: 0.05em;
+    }
+
+    .ghost-theirs-block {
+      opacity: 0.4;
+      pointer-events: none;
+      user-select: none;
+      background: rgba(26, 58, 92, 0.5);
     }
 
     .result-content-area {
@@ -492,30 +496,41 @@ export class MergeEditor {
             + '</div>';
 
           // Result column
-          let resContent = '';
-          let resClass = '';
-          if (res === 'mine') {
-            resContent = renderLines(seg.mineLines, 'mine');
-            resClass = ' mine-block';
-          } else if (res === 'theirs') {
-            resContent = renderLines(seg.theirLines, 'theirs');
-            resClass = ' theirs-block';
-          } else if (res !== null) {
-            resContent = renderLines(res.split('\\n'), '');
-            resClass = ' resolved-block';
+          if (res === null) {
+            const mineHeightStyle = 'min-height: ' + (Math.max(seg.mineLines.length, 1) * 1.5) + 'em; display: block;';
+            const ghostHeightStyle = 'min-height: ' + (Math.max(seg.theirLines.length, 1) * 1.5) + 'em; display: block;';
+            resultHtml += '<div class="conflict-block result-block' + activeClass + '" data-conflict="' + idx + '">'
+              + '<div class="conflict-actions" style="justify-content: center;"><span style="font-size:11px; opacity:0.7;">Result</span></div>'
+              + '<div class="result-content-area mine-block" contenteditable="true" data-index="' + idx + '" style="outline:none; width:100%; ' + mineHeightStyle + '">'
+              + renderLines(seg.mineLines, 'mine')
+              + '</div>'
+              + '<div class="incoming-separator">Incoming \u2193</div>'
+              + '<div class="ghost-theirs-block theirs-block" contenteditable="false" style="' + ghostHeightStyle + '">'
+              + renderLines(seg.theirLines, 'theirs')
+              + '</div>'
+              + '</div>';
           } else {
-            resContent = '<div class="unresolved-placeholder">Unresolved. Accept a side to compile.</div><div class="code-line">&nbsp;</div>';
-            resClass = ' unresolved-block';
+            let resContent = '';
+            let resClass = '';
+            if (res === 'mine') {
+              resContent = renderLines(seg.mineLines, 'mine');
+              resClass = ' mine-block';
+            } else if (res === 'theirs') {
+              resContent = renderLines(seg.theirLines, 'theirs');
+              resClass = ' theirs-block';
+            } else {
+              resContent = renderLines(res.split('\\n'), '');
+              resClass = ' resolved-block';
+            }
+            resultHtml += '<div class="conflict-block result-block' + resClass + activeClass + '" data-conflict="' + idx + '">'
+              + '<div class="conflict-actions" style="justify-content: center;">'
+              + '<button class="undo-btn" data-action="undo" data-index="' + idx + '">↩ Reset</button>'
+              + '</div>'
+              + '<div class="result-content-area" contenteditable="true" data-index="' + idx + '" style="outline:none; width:100%; ' + minHeightStyle + '">'
+              + resContent
+              + '</div>'
+              + '</div>';
           }
-
-          resultHtml += '<div class="conflict-block result-block' + resClass + activeClass + '" data-conflict="' + idx + '">'
-            + '<div class="conflict-actions" style="justify-content: center;">'
-            + (res !== null ? '<button class="undo-btn" data-action="undo" data-index="' + idx + '">↩ Reset</button>' : '<span style="font-size:11px; opacity:0.7;">Result</span>')
-            + '</div>'
-            + '<div class="result-content-area" contenteditable="true" data-index="' + idx + '" style="outline:none; width:100%; ' + minHeightStyle + '">'
-            + resContent
-            + '</div>'
-            + '</div>';
         }
       }
 
@@ -712,9 +727,14 @@ export class MergeEditor {
       const target = e.target;
       const contentArea = target.closest('.result-content-area');
       if (contentArea) {
-        const placeholder = contentArea.querySelector('.unresolved-placeholder');
-        if (placeholder) placeholder.remove();
-        
+        // Remove ghost preview when user starts editing
+        const conflictBlock = contentArea.closest('.conflict-block');
+        if (conflictBlock) {
+          const sep = conflictBlock.querySelector('.incoming-separator');
+          const ghost = conflictBlock.querySelector('.ghost-theirs-block');
+          if (sep) sep.remove();
+          if (ghost) ghost.remove();
+        }
         const idx = Number(contentArea.getAttribute('data-index'));
         let text = contentArea.innerText || '';
         if (text.endsWith('\\n')) text = text.slice(0, -1);
