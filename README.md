@@ -1,10 +1,10 @@
-# Conflict Resolver
+# GitHarmony
 
-Tired of resolving Git conflicts one file at a time? **Conflict Resolver** brings JetBrains-style merge resolution directly into VS Code — see all conflicted files at a glance and resolve them in a powerful 3-column merge editor.
+Tired of resolving Git conflicts one file at a time? **GitHarmony** brings JetBrains-style merge resolution directly into VS Code — see all conflicted files at a glance and resolve them in a powerful 3-column merge editor.
 
 ![Merge Editor](/images/view.png)
 
-### Why Conflict Resolver?
+### Why GitHarmony?
 
 - **One-click access** — a status bar icon lights up the moment conflicts appear
 - **See everything** — a dedicated panel lists every conflicted file with conflict counts

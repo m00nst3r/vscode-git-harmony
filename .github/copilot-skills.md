@@ -1,4 +1,4 @@
-# Conflict Resolver — Copilot Skills
+# GitHarmony — Copilot Skills
 
 skills:
 
@@ -73,7 +73,7 @@ skills:
       To add a new command:
       1. In `src/extension.ts`, register it inside `activate()` using `vscode.commands.registerCommand('gitHarmony.<name>', handler)`.
       2. Push the disposable to `context.subscriptions`.
-      3. In `package.json`, add to `contributes.commands` with `command`, `title`, and `category: "Conflict Resolver"`.
+      3. In `package.json`, add to `contributes.commands` with `command`, `title`, and `category: "GitHarmony"`.
       4. Optionally add a keybinding under `contributes.keybindings` (use `ctrl+shift+g` prefix on Windows/Linux, `cmd+shift+g` on Mac).
       5. Optionally add menu contributions under `contributes.menus` with appropriate `when` clauses.
       6. Run `npm run compile` to verify TypeScript compiles.
