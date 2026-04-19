@@ -2,15 +2,28 @@
   "name": "git-harmony",
   "displayName": "GitHarmony - Git Conflict Resolver",
   "description": "JetBrains-style Git conflict resolution for VS Code",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "m00nst3r",
   "engines": {
     "vscode": "^1.85.0"
   },
+  "license": "MIT",
   "categories": [
     "SCM Providers",
     "Other"
   ],
+  "icon": "icon.png",
+  "keywords": [
+    "git",
+    "merge",
+    "conflict",
+    "resolve"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/m00nst3r/vscode-git-harmony"
+  },
+  "pricing": "Free",
   "activationEvents": [
     "onCommand:conflictResolver.openConflicts",
     "workspaceContains:.git"

@@ -2,7 +2,7 @@
 
 Tired of resolving Git conflicts one file at a time? **GitHarmony** brings JetBrains-style merge resolution directly into VS Code — see all conflicted files at a glance and resolve them in a powerful 3-column merge editor.
 
-![Merge Editor](/images/view.png)
+![Merge Editor](/images/banner.png)
 
 ### Why GitHarmony?
 
