@@ -1,138 +1,89 @@
 # Conflict Resolver
 
-A VS Code extension that brings JetBrains-style Git conflict resolution to the editor — featuring a conflict file list modal and a full 3-column interactive merge editor.
+Tired of resolving Git conflicts one file at a time? **Conflict Resolver** brings JetBrains-style merge resolution directly into VS Code — see all conflicted files at a glance and resolve them in a powerful 3-column merge editor.
+
+![Merge Editor](/images/view.png)
+
+### Why Conflict Resolver?
+
+- **One-click access** — a status bar icon lights up the moment conflicts appear
+- **See everything** — a dedicated panel lists every conflicted file with conflict counts
+- **Resolve faster** — accept mine, accept theirs, or manually edit in a side-by-side-by-side view
+- **Stay in flow** — files are automatically staged after resolution so you can keep going
 
 ## Features
 
-### Conflict File List Modal
+### Status Bar Icon
+![Status Bar Icon](/images/icon.png)
 
-Run **Resolve Git Conflicts...** to open a panel listing every file with unresolved conflict markers.
+A `$(git-merge)` icon appears in the bottom status bar whenever your workspace has merge conflicts.
 
-Each row shows:
-- The file's relative path and how many conflict blocks it contains
-- **Accept Mine** — keeps HEAD sections, removes markers, and stages the file
-- **Accept Theirs** — keeps the incoming sections, removes markers, and stages the file
-- **Merge...** — opens the 3-column merge editor for that file
+- Shows the **number of conflicted files** at a glance
+- Turns **orange** to grab your attention
+- **Click it** to jump straight into the resolution panel
+- Automatically hides once all conflicts are resolved
 
-The bottom toolbar provides:
-- **Accept All Mine / Accept All Theirs** to resolve every file at once
-- A live counter of how many files have been resolved
-- A **Close** button
+### Conflict File List
 
-Resolved rows are marked green and their action buttons are disabled.
+![Conflict List](/images/main.png)
+
+A clear overview of every file with unresolved conflicts. For each file you can:
+
+| Action | What it does |
+|--------|--------------|
+| **Accept Mine** | Keep your (HEAD) changes, discard incoming, auto-stage |
+| **Accept Theirs** | Keep incoming changes, discard yours, auto-stage |
+| **Merge...** | Open the full 3-column merge editor |
+
+Bulk actions at the bottom let you **Accept All Mine** or **Accept All Theirs** in one click. Resolved files turn green so you always know what's left.
 
 ---
 
 ### 3-Column Merge Editor
 
-Opens a full-screen panel with three equal columns:
+![Merge Editor](/images/view.png)
 
-```
-┌─────────────┬─────────────┬──────────────┐
-│ Mine (HEAD) │   Result    │    Theirs    │
-│  <branch>   │             │  <ref/sha>   │
-├─────────────┼─────────────┼──────────────┤
-│  normal     │  normal     │  normal      │
-│  lines      │  lines      │  lines       │
-├─────────────┼─────────────┼──────────────┤
-│  HEAD       │ [▶ Accept   │  Incoming    │
-│  conflict   │    Mine   ] │  conflict    │
-│  lines      │ [▶ Accept   │  lines       │
-│  (green)    │   Theirs  ] │  (blue)      │
-│             │ [✏ Edit]    │              │
-└─────────────┴─────────────┴──────────────┘
-```
+A full-screen panel inspired by JetBrains IDEs with three synchronized columns: **Mine (HEAD)**, **Result**, and **Theirs (Incoming)**.
 
-**Per-block actions (Result column):**
-- **▶ Accept Mine** — fills the result with the HEAD version
-- **▶ Accept Theirs** — fills the result with the incoming version
-- **✏ Edit** — opens an inline `<textarea>` pre-filled with both versions for manual editing; confirm with **✓ Confirm**
-- **↩ Undo** — reverts an already-resolved block back to unresolved
+**Resolve each conflict block individually:**
+- **Accept Mine** or **Accept Theirs** with a single click
+- **Edit manually** — the result column is fully editable
+- **Undo** any resolution to try a different approach
 
-**Toolbar actions:**
-- **← Prev Conflict / Next Conflict →** — jump between unresolved blocks
-- **Accept All Mine / Accept All Theirs** — resolve every block at once
-- **Save & Mark Resolved** — writes the result to disk, runs `git add`, and returns to the conflict list
-- **Cancel** — closes without saving
+**Navigate quickly:**
+- **← Prev / Next →** buttons to jump between conflicts
+- **Accept All Mine / Accept All Theirs** for bulk resolution
+- Hover any conflict to highlight the matching block across all columns
 
-**Other behaviours:**
-- All three columns scroll in sync
-- Hovering a conflict block highlights the corresponding block in all three columns
-- Syntax highlighting via [highlight.js](https://highlightjs.org/) (CDN), respecting the file's language
-- Unresolved blocks are warned about before saving (with an option to proceed)
+**When you're done:**
+- **Save & Mark Resolved** writes the file and runs `git add` automatically
+- A warning appears if any conflicts are still unresolved
+
+Includes **syntax highlighting** and **synchronized scrolling** across all three columns.
 
 ---
 
-## Usage
+## Getting Started
 
 | Action | How |
 |--------|-----|
-| Open conflict list | `Cmd+Shift+G C` (macOS) / `Ctrl+Shift+G C` (Windows/Linux) |
-| Open conflict list | Command Palette → **Resolve Git Conflicts...** |
-| Open conflict list | Source Control panel title bar icon |
-| Open conflict list | Right-click a resource in the SCM panel |
+| Click the status bar icon | `$(git-merge) N Conflicts` in the bottom bar (when conflicts exist) |
+| Keyboard shortcut | `Cmd+Shift+P` (macOS) / `Ctrl+Shift+P` (Windows/Linux) |
+| Command Palette | **Resolve Git Conflicts...** |
+| Source Control panel | Title bar icon or right-click a conflicted file |
 
 ---
 
 ## Requirements
 
-- VS Code `^1.85.0`
-- A Git repository (the extension activates on workspaces containing a `.git` folder)
-- Git available on `PATH`
+- **VS Code** `1.85.0` or newer
+- A **Git** repository with Git available on `PATH`
 
 ---
 
-## Extension Architecture
+## Contributing
 
-```
-src/
-├── extension.ts        # Entry point — registers the command
-├── conflictPanel.ts    # WebviewPanel: conflict file list modal
-├── mergeEditor.ts      # WebviewPanel: 3-column merge editor
-├── conflictScanner.ts  # Parses conflict markers, builds ConflictBlock[]
-└── gitUtils.ts         # Shell wrappers: git diff, git add, branch detection
-```
-
-### `conflictScanner.ts`
-
-- **`parseConflictBlocks(content)`** — returns `ConflictBlock[]` with `startLine`, `endLine`, `mineLines`, and `theirLines`
-- **`countConflicts(filePath)`** — returns the number of conflict blocks in a file
-- **`resolveWithResult(filePath, blocks, chosenSides)`** — builds the final file content given per-block resolution choices (`'mine'`, `'theirs'`, or an arbitrary custom string)
-
-### `gitUtils.ts`
-
-- **`getConflictedFiles(workspaceRoot)`** — `git diff --name-only --diff-filter=U`
-- **`acceptMine(filePath)`** — strips conflict markers keeping HEAD sections in-place
-- **`acceptTheirs(filePath)`** — strips conflict markers keeping incoming sections in-place
-- **`stageFile(filePath)`** — `git add <filePath>`
-- **`getCurrentBranch(workspaceRoot)`** — `git branch --show-current`
-- **`getIncomingRef(workspaceRoot)`** — reads `MERGE_HEAD`, `CHERRY_PICK_HEAD`, or `REBASE_HEAD` to produce a human-readable label
-
----
-
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Compile TypeScript
-npm run compile
-
-# Watch mode
-npm run watch
-
-# Launch extension in a new VS Code window
-# Press F5 in VS Code with the workspace open
-```
-
----
-
-## Security
-
-- All WebviewPanels use a per-instance `nonce` and a strict Content Security Policy (`default-src 'none'`)
-- No user input is ever eval'd or interpolated without HTML escaping
-- Shell commands use `execSync` with `stdio: pipe` — no shell interpolation of user-controlled paths in command strings
+Contributions are welcome! See the [copilot instructions](.github/copilot-instructions.md) for architecture details, coding conventions, and development setup.
 
 ---
 

@@ -71,7 +71,7 @@ skills:
       Add a new VS Code command to the extension.
     instructions: |
       To add a new command:
-      1. In `src/extension.ts`, register it inside `activate()` using `vscode.commands.registerCommand('conflictResolver.<name>', handler)`.
+      1. In `src/extension.ts`, register it inside `activate()` using `vscode.commands.registerCommand('gitHarmony.<name>', handler)`.
       2. Push the disposable to `context.subscriptions`.
       3. In `package.json`, add to `contributes.commands` with `command`, `title`, and `category: "Conflict Resolver"`.
       4. Optionally add a keybinding under `contributes.keybindings` (use `ctrl+shift+g` prefix on Windows/Linux, `cmd+shift+g` on Mac).

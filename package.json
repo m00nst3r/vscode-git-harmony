@@ -1,9 +1,9 @@
 {
-  "name": "conflict-resolver",
-  "displayName": "Conflict Resolver",
+  "name": "git-harmony",
+  "displayName": "GitHarmony - Git Conflict Resolver",
   "description": "JetBrains-style Git conflict resolution for VS Code",
   "version": "0.1.0",
-  "publisher": "conflict-resolver",
+  "publisher": "m00nst3r",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -19,15 +19,15 @@
   "contributes": {
     "commands": [
       {
-        "command": "conflictResolver.openConflicts",
+        "command": "gitHarmony.openConflicts",
         "title": "Resolve Git Conflicts...",
-        "category": "Conflict Resolver",
+        "category": "GitHarmony",
         "icon": "$(git-merge)"
       }
     ],
     "keybindings": [
       {
-        "command": "conflictResolver.openConflicts",
+        "command": "gitHarmony.openConflicts",
         "key": "ctrl+shift+g c",
         "mac": "cmd+shift+g c"
       }
@@ -35,14 +35,14 @@
     "menus": {
       "scm/title": [
         {
-          "command": "conflictResolver.openConflicts",
+          "command": "gitHarmony.openConflicts",
           "group": "navigation",
           "when": "scmProvider == git"
         }
       ],
       "scm/resourceState/context": [
         {
-          "command": "conflictResolver.openConflicts",
+          "command": "gitHarmony.openConflicts",
           "group": "inline",
           "when": "scmProvider == git"
         }
