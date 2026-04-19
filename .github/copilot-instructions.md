@@ -13,7 +13,7 @@ This is a **VS Code extension** that provides JetBrains-style Git conflict resol
 
 ```
 src/
-├── extension.ts        # Entry point — registers the `conflictResolver.openConflicts` command
+├── extension.ts        # Entry point — registers the `gitHarmony.openConflicts` command
 ├── conflictPanel.ts    # WebviewPanel for the conflict file list modal
 ├── mergeEditor.ts      # WebviewPanel for the 3-column merge editor
 ├── conflictScanner.ts  # Pure-logic parser for Git conflict markers → ConflictBlock[]
