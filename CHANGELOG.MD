@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0
+### Added
+* Decline button (✕) for each conflict block.
+* Ability to toggle selections by declining the currently accepted side.
+* Improved button layout placing accept actions closer to the result column.
+* Visual indicators showing which side of a conflict was accepted by disabling buttons.
+
 ## 0.1.1
 
 ### Added
