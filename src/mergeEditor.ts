@@ -350,6 +350,7 @@ export class MergeEditor {
     .accept-inline-btn:disabled { opacity: 0.4; cursor: default; }
     .accept-mine-btn { background: #2d5a27; color: #c8e6c9; border: 1px solid #4caf50; }
     .accept-theirs-btn { background: #1a3a5c; color: #bbdefb; border: 1px solid #2196f3; }
+    .decline-btn { background: #4a1a1a; color: #ffcdd2; border: 1px solid #e57373; }
 
     .undo-btn {
       font-size: 11px;
@@ -477,20 +478,25 @@ export class MergeEditor {
           const lineCountDiff = Math.max(seg.mineLines.length, seg.theirLines.length, resLinesLength);
           const minHeightStyle = 'min-height: ' + (Math.max(lineCountDiff, 1) * 1.5) + 'em; display: block;';
 
-          // Mine column
+          // Resolved state helpers
+          const mineAccepted  = res === 'mine';
+          const theirsAccepted = res === 'theirs';
+          const anyResolved = res !== null;
+
+          // Mine column — Decline stays active only when mine was accepted (click to switch to theirs)
           mineHtml += '<div class="conflict-block mine-block' + activeClass + '" data-conflict="' + idx + '">'
             + '<div class="conflict-actions">'
-            + '<button class="accept-inline-btn accept-mine-btn" data-action="accept" data-side="mine" data-index="' + idx + '">Accept Mine ▶</button>'
-            + (res === 'mine' ? '<button class="undo-btn" data-action="undo" data-index="' + idx + '">↩ Undo</button>' : '')
+            + '<button class="accept-inline-btn decline-btn" data-action="decline" data-side="mine" data-index="' + idx + '" title="Decline Mine (accept theirs)"' + (mineAccepted ? '' : ' disabled') + '>✕</button>'
+            + '<button class="accept-inline-btn accept-mine-btn" data-action="accept" data-side="mine" data-index="' + idx + '"' + (anyResolved ? ' disabled' : '') + '>Accept Mine ▶</button>'
             + '</div>'
             + '<div style="' + minHeightStyle + '">' + renderLines(seg.mineLines, 'mine') + '</div>'
             + '</div>';
 
-          // Theirs column
+          // Theirs column — Decline stays active only when theirs was accepted (click to switch to mine)
           theirsHtml += '<div class="conflict-block theirs-block' + activeClass + '" data-conflict="' + idx + '">'
             + '<div class="conflict-actions" style="justify-content: flex-end;">'
-            + (res === 'theirs' ? '<button class="undo-btn" data-action="undo" data-index="' + idx + '">↩ Undo</button>' : '')
-            + '<button class="accept-inline-btn accept-theirs-btn" data-action="accept" data-side="theirs" data-index="' + idx + '">◀ Accept Theirs</button>'
+            + '<button class="accept-inline-btn accept-theirs-btn" data-action="accept" data-side="theirs" data-index="' + idx + '"' + (anyResolved ? ' disabled' : '') + '>◀ Accept Theirs</button>'
+            + '<button class="accept-inline-btn decline-btn" data-action="decline" data-side="theirs" data-index="' + idx + '" title="Decline Theirs (accept mine)"' + (theirsAccepted ? '' : ' disabled') + '>✕</button>'
             + '</div>'
             + '<div style="' + minHeightStyle + '">' + renderLines(seg.theirLines, 'theirs') + '</div>'
             + '</div>';
@@ -697,6 +703,16 @@ export class MergeEditor {
           const side = button.dataset.side;
           if (side === 'mine' || side === 'theirs') {
             accept(index, side);
+          }
+          break;
+        }
+        case 'decline': {
+          // Declining one side accepts the opposite side
+          const side = button.dataset.side;
+          if (side === 'mine') {
+            accept(index, 'theirs');
+          } else if (side === 'theirs') {
+            accept(index, 'mine');
           }
           break;
         }
