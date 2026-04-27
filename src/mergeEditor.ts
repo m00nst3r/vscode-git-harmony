@@ -120,7 +120,7 @@ export class MergeEditor {
 
     const segmentsJson = JSON.stringify(segments);
     const blocksCount = blocks.length;
-    const fileContentEscaped = JSON.stringify(fileContent);
+    // const fileContentEscaped = JSON.stringify(fileContent);
 
     return /* html */`<!DOCTYPE html>
 <html lang="en">
@@ -328,41 +328,85 @@ export class MergeEditor {
       outline: 1px solid var(--vscode-focusBorder);
     }
 
-    .conflict-actions {
+    /* Action sidebar bars */
+    .action-bar {
+      width: 52px;
+      flex-shrink: 0;
       display: flex;
+      flex-direction: column;
+      background: var(--vscode-sideBar-background);
+      border-right: 1px solid var(--vscode-panel-border);
+      overflow: hidden;
+    }
+
+    .action-bar-header {
+      padding: 6px 0;
+      background: var(--vscode-editorGroupHeader-tabsBackground, #252526);
+      border-bottom: 1px solid var(--vscode-panel-border);
+      flex-shrink: 0;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .action-bar-scroll {
+      flex: 1;
+      overflow-y: scroll;
+      overflow-x: hidden;
+      scrollbar-width: none;
+    }
+
+    .action-bar-scroll::-webkit-scrollbar { display: none; }
+
+    .action-bar-content {
+      font-size: var(--vscode-editor-font-size, 13px);
+      line-height: 1.5;
+      min-height: 100%;
+    }
+
+    .action-bar-row {
+      background: var(--vscode-editor-background);
+    }
+
+    .action-bar-conflict-row {
+      display: flex;
+      flex-direction: row;
+      align-items: flex-start;
+      justify-content: center;
       gap: 4px;
-      padding: 4px 8px;
-      background: rgba(0, 0, 0, 0.25);
+      padding-top: 4px;
+      border-top: 1px solid var(--vscode-panel-border);
+      border-bottom: 1px solid var(--vscode-panel-border);
+    }
+
+    .action-bar-conflict-row.active {
+      box-shadow: 0 0 0 1px var(--vscode-focusBorder, #007fd4) inset;
+    }
+
+    /* Icon-only action buttons */
+    .icon-btn {
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+      border-radius: 3px;
+      border: 1px solid transparent;
+      padding: 0;
+      transition: opacity 0.1s;
+      font-family: var(--vscode-font-family);
       flex-shrink: 0;
     }
 
-    .accept-inline-btn {
-      padding: 2px 8px;
-      font-size: 11px;
-      font-family: var(--vscode-font-family);
-      cursor: pointer;
-      border-radius: 3px;
-      border: none;
-      transition: opacity 0.1s;
-    }
+    .icon-btn:hover { opacity: 0.8; }
+    .icon-btn:disabled { opacity: 0.25; cursor: default; }
 
-    .accept-inline-btn:hover { opacity: 0.85; }
-    .accept-inline-btn:disabled { opacity: 0.4; cursor: default; }
-    .accept-mine-btn { background: #2d5a27; color: #c8e6c9; border: 1px solid #4caf50; }
-    .accept-theirs-btn { background: #1a3a5c; color: #bbdefb; border: 1px solid #2196f3; }
-    .decline-btn { background: #4a1a1a; color: #ffcdd2; border: 1px solid #e57373; }
-
-    .undo-btn {
-      font-size: 11px;
-      background: none;
-      border: 1px solid var(--vscode-button-border, #555);
-      color: var(--vscode-foreground);
-      border-radius: 3px;
-      padding: 1px 6px;
-      cursor: pointer;
-    }
-
-    .undo-btn:hover { opacity: 0.7; }
+    .icon-btn-accept-mine   { background: #2d5a27; color: #c8e6c9; border-color: #4caf50; }
+    .icon-btn-accept-theirs { background: #1a3a5c; color: #bbdefb; border-color: #2196f3; }
+    .icon-btn-decline       { background: #4a1a1a; color: #ffcdd2; border-color: #e57373; }
+    .icon-btn-undo          { background: none; color: var(--vscode-foreground); border-color: var(--vscode-button-border, #555); }
 
     .hljs { background: transparent !important; padding: 0 !important; }
   </style>
@@ -390,6 +434,13 @@ export class MergeEditor {
       </div>
     </div>
 
+    <div class="action-bar" id="colActionLeft">
+      <div class="action-bar-header">&#160;</div>
+      <div class="action-bar-scroll" id="scrollActionLeft">
+        <div class="action-bar-content" id="contentActionLeft"></div>
+      </div>
+    </div>
+
     <div class="column" id="colResult">
       <div class="column-header">
         <span>Result</span>
@@ -397,6 +448,13 @@ export class MergeEditor {
       </div>
       <div class="column-scroll" id="scrollResult">
         <div class="code-content" id="contentResult"></div>
+      </div>
+    </div>
+
+    <div class="action-bar" id="colActionRight">
+      <div class="action-bar-header">&#160;</div>
+      <div class="action-bar-scroll" id="scrollActionRight">
+        <div class="action-bar-content" id="contentActionRight"></div>
       </div>
     </div>
 
@@ -452,8 +510,10 @@ export class MergeEditor {
 
     function renderColumns() {
       let mineHtml = '';
-      let theirsHtml = '';
+      let leftBarHtml = '';
       let resultHtml = '';
+      let rightBarHtml = '';
+      let theirsHtml = '';
       let conflictIdx = 0;
 
       for (const seg of segments) {
@@ -463,6 +523,9 @@ export class MergeEditor {
           mineHtml += block;
           theirsHtml += block;
           resultHtml += block;
+          const normalBarBlock = '<div class="action-bar-row"></div>';
+          leftBarHtml += normalBarBlock;
+          rightBarHtml += normalBarBlock;
         } else {
           const idx = conflictIdx;
           conflictIdx++;
@@ -483,30 +546,40 @@ export class MergeEditor {
           const theirsAccepted = res === 'theirs';
           const anyResolved = res !== null;
 
-          // Mine column — Decline stays active only when mine was accepted (click to switch to theirs)
+          // Mine column
           mineHtml += '<div class="conflict-block mine-block' + activeClass + '" data-conflict="' + idx + '">'
-            + '<div class="conflict-actions">'
-            + '<button class="accept-inline-btn decline-btn" data-action="decline" data-side="mine" data-index="' + idx + '" title="Decline Mine (accept theirs)"' + (mineAccepted ? '' : ' disabled') + '>✕</button>'
-            + '<button class="accept-inline-btn accept-mine-btn" data-action="accept" data-side="mine" data-index="' + idx + '"' + (anyResolved ? ' disabled' : '') + '>Accept Mine ▶</button>'
-            + '</div>'
             + '<div style="' + minHeightStyle + '">' + renderLines(seg.mineLines, 'mine') + '</div>'
             + '</div>';
 
-          // Theirs column — Decline stays active only when theirs was accepted (click to switch to mine)
+          // Theirs column
           theirsHtml += '<div class="conflict-block theirs-block' + activeClass + '" data-conflict="' + idx + '">'
-            + '<div class="conflict-actions" style="justify-content: flex-end;">'
-            + '<button class="accept-inline-btn accept-theirs-btn" data-action="accept" data-side="theirs" data-index="' + idx + '"' + (anyResolved ? ' disabled' : '') + '>◀ Accept Theirs</button>'
-            + '<button class="accept-inline-btn decline-btn" data-action="decline" data-side="theirs" data-index="' + idx + '" title="Decline Theirs (accept mine)"' + (theirsAccepted ? '' : ' disabled') + '>✕</button>'
-            + '</div>'
             + '<div style="' + minHeightStyle + '">' + renderLines(seg.theirLines, 'theirs') + '</div>'
             + '</div>';
+
+          // Action bar rows
+          if (!anyResolved) {
+            leftBarHtml += '<div class="action-bar-conflict-row' + activeClass + '" data-conflict="' + idx + '">'
+              + '<button class="icon-btn icon-btn-decline" data-action="decline" data-side="mine" data-index="' + idx + '" title="Accept Theirs">&#x2715;</button>'
+              + '<button class="icon-btn icon-btn-accept-mine" data-action="accept" data-side="mine" data-index="' + idx + '" title="Accept Mine">&#x25B6;</button>'
+              + '</div>';
+            rightBarHtml += '<div class="action-bar-conflict-row' + activeClass + '" data-conflict="' + idx + '">'
+              + '<button class="icon-btn icon-btn-accept-theirs" data-action="accept" data-side="theirs" data-index="' + idx + '" title="Accept Theirs">&#x25C0;</button>'
+              + '<button class="icon-btn icon-btn-decline" data-action="decline" data-side="theirs" data-index="' + idx + '" title="Accept Mine">&#x2715;</button>'
+              + '</div>';
+          } else {
+            leftBarHtml += '<div class="action-bar-conflict-row' + activeClass + '" data-conflict="' + idx + '">'
+              + '<button class="icon-btn icon-btn-undo" data-action="undo" data-index="' + idx + '" title="Reset">&#x21A9;</button>'
+              + '</div>';
+            rightBarHtml += '<div class="action-bar-conflict-row' + activeClass + '" data-conflict="' + idx + '">'
+              + '<button class="icon-btn icon-btn-undo" data-action="undo" data-index="' + idx + '" title="Reset">&#x21A9;</button>'
+              + '</div>';
+          }
 
           // Result column
           if (res === null) {
             const mineHeightStyle = 'min-height: ' + (Math.max(seg.mineLines.length, 1) * 1.5) + 'em; display: block;';
             const ghostHeightStyle = 'min-height: ' + (Math.max(seg.theirLines.length, 1) * 1.5) + 'em; display: block;';
             resultHtml += '<div class="conflict-block result-block' + activeClass + '" data-conflict="' + idx + '">'
-              + '<div class="conflict-actions" style="justify-content: center;"><span style="font-size:11px; opacity:0.7;">Result</span></div>'
               + '<div class="result-content-area mine-block" contenteditable="true" data-index="' + idx + '" style="outline:none; width:100%; ' + mineHeightStyle + '">'
               + renderLines(seg.mineLines, 'mine')
               + '</div>'
@@ -529,9 +602,6 @@ export class MergeEditor {
               resClass = ' resolved-block';
             }
             resultHtml += '<div class="conflict-block result-block' + resClass + activeClass + '" data-conflict="' + idx + '">'
-              + '<div class="conflict-actions" style="justify-content: center;">'
-              + '<button class="undo-btn" data-action="undo" data-index="' + idx + '">↩ Reset</button>'
-              + '</div>'
               + '<div class="result-content-area" contenteditable="true" data-index="' + idx + '" style="outline:none; width:100%; ' + minHeightStyle + '">'
               + resContent
               + '</div>'
@@ -541,10 +611,33 @@ export class MergeEditor {
       }
 
       document.getElementById('contentMine').innerHTML = mineHtml;
-      document.getElementById('contentTheirs').innerHTML = theirsHtml;
+      document.getElementById('contentActionLeft').innerHTML = leftBarHtml;
       document.getElementById('contentResult').innerHTML = resultHtml;
+      document.getElementById('contentActionRight').innerHTML = rightBarHtml;
+      document.getElementById('contentTheirs').innerHTML = theirsHtml;
 
       updateCounter();
+      syncBarHeights();
+    }
+
+    // Measure actual rendered heights from the code columns and apply them
+    // to the action bar rows so buttons align exactly with each conflict block.
+    function syncBarHeights() {
+      const mineChildren    = document.getElementById('contentMine').children;
+      const resultChildren  = document.getElementById('contentResult').children;
+      const theirsChildren  = document.getElementById('contentTheirs').children;
+      const leftChildren    = document.getElementById('contentActionLeft').children;
+      const rightChildren   = document.getElementById('contentActionRight').children;
+      const len = mineChildren.length;
+      for (let i = 0; i < len; i++) {
+        const h = Math.max(
+          mineChildren[i]   ? mineChildren[i].offsetHeight   : 0,
+          resultChildren[i] ? resultChildren[i].offsetHeight : 0,
+          theirsChildren[i] ? theirsChildren[i].offsetHeight : 0
+        );
+        if (leftChildren[i])  { leftChildren[i].style.height  = h + 'px'; }
+        if (rightChildren[i]) { rightChildren[i].style.height = h + 'px'; }
+      }
     }
 
     function updateCounter() {
@@ -723,8 +816,10 @@ export class MergeEditor {
     }
 
     document.getElementById('contentMine').addEventListener('click', handleConflictAction);
-    document.getElementById('contentTheirs').addEventListener('click', handleConflictAction);
+    document.getElementById('contentActionLeft').addEventListener('click', handleConflictAction);
     document.getElementById('contentResult').addEventListener('click', handleConflictAction);
+    document.getElementById('contentActionRight').addEventListener('click', handleConflictAction);
+    document.getElementById('contentTheirs').addEventListener('click', handleConflictAction);
 
     document.getElementById('contentResult').addEventListener('paste', e => {
       e.preventDefault();
@@ -756,6 +851,7 @@ export class MergeEditor {
         if (text.endsWith('\\n')) text = text.slice(0, -1);
         resolutions[idx] = text;
         updateCounter();
+        syncBarHeights();
       }
     });
 
@@ -769,7 +865,7 @@ export class MergeEditor {
       clearTimeout(scrollTimer);
       scrollTimer = setTimeout(() => { scrollingSrc = null; }, 100);
 
-      const scrolls = ['scrollMine', 'scrollResult', 'scrollTheirs'];
+      const scrolls = ['scrollMine', 'scrollActionLeft', 'scrollResult', 'scrollActionRight', 'scrollTheirs'];
       const srcEl = document.getElementById(src);
       const ratio = srcEl.scrollTop / (srcEl.scrollHeight - srcEl.clientHeight || 1);
 
@@ -780,7 +876,7 @@ export class MergeEditor {
       }
     }
 
-    ['scrollMine', 'scrollResult', 'scrollTheirs'].forEach(id => {
+    ['scrollMine', 'scrollActionLeft', 'scrollResult', 'scrollActionRight', 'scrollTheirs'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.addEventListener('scroll', () => syncScroll(id), { passive: true });
     });
