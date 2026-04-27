@@ -120,7 +120,6 @@ export class MergeEditor {
 
     const segmentsJson = JSON.stringify(segments);
     const blocksCount = blocks.length;
-    // const fileContentEscaped = JSON.stringify(fileContent);
 
     return /* html */`<!DOCTYPE html>
 <html lang="en">
