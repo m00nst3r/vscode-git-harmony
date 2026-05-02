@@ -1,7 +1,7 @@
 {
   "name": "git-harmony",
   "displayName": "GitHarmony - Git Conflict Resolver",
-  "description": "JetBrains-style Git conflict resolution for VS Code",
+  "description": "Visual 3-way merge editor for Git conflicts in VS Code. All conflicted files in one panel, resolved with one click.",
   "version": "0.2.0",
   "publisher": "m00nst3r",
   "engines": {
@@ -9,15 +9,18 @@
   },
   "license": "MIT",
   "categories": [
-    "SCM Providers",
-    "Other"
+    "SCM Providers"
   ],
   "icon": "icon.png",
   "keywords": [
     "git",
     "merge",
     "conflict",
-    "resolve"
+    "resolve",
+    "3-way merge",
+    "merge editor",
+    "rebase",
+    "diff"
   ],
   "repository": {
     "type": "git",
